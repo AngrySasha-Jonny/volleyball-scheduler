@@ -11,38 +11,87 @@ function generatePairs(teamCount) {
   return pairs;
 }
 
-// Group pairs into rounds (2 matches per round, 2 courts)
-function groupRounds(pairs) {
-  const rounds = [];
-  const remaining = pairs.map((p) => ({ teams: p, complete: false }));
+// Custom scheduling logic per your requirements
+function scheduleRounds(teamCount) {
+  const allPairs = generatePairs(teamCount);
 
-  while (remaining.length > 0) {
+  // Round 1 fixed: teams 1-4 play (1v2, 3v4)
+  const rounds = [];
+  const round1 = [
+    { teams: [1, 2], complete: false },
+    { teams: [3, 4], complete: false },
+  ];
+  rounds.push(round1);
+
+  // Remove round1 pairs from allPairs
+  let remainingPairs = allPairs.filter(
+    ([a, b]) =>
+      !(
+        (a === 1 && b === 2) ||
+        (a === 2 && b === 1) ||
+        (a === 3 && b === 4) ||
+        (a === 4 && b === 3)
+      )
+  );
+
+  // Track matches played per team
+  const matchesCount = {};
+  for (let i = 1; i <= teamCount; i++) matchesCount[i] = 0;
+  matchesCount[1] = 1;
+  matchesCount[2] = 1;
+  matchesCount[3] = 1;
+  matchesCount[4] = 1;
+
+  // Track played pairs to avoid repeats
+  const playedPairs = new Set();
+  round1.forEach(({ teams }) => {
+    playedPairs.add(`${teams[0]}-${teams[1]}`);
+    playedPairs.add(`${teams[1]}-${teams[0]}`);
+  });
+
+  // Schedule next rounds prioritizing teams with fewer matches to get max teams playing ASAP
+  while (remainingPairs.length > 0) {
     const usedTeams = new Set();
     const round = [];
 
-    for (let i = 0; i < remaining.length; i++) {
-      const [a, b] = remaining[i].teams;
-      if (!usedTeams.has(a) && !usedTeams.has(b)) {
-        round.push(remaining[i]);
+    // Sort pairs by sum of matches played (lower sum first)
+    remainingPairs.sort((a, b) => {
+      const aSum = matchesCount[a[0]] + matchesCount[a[1]];
+      const bSum = matchesCount[b[0]] + matchesCount[b[1]];
+      return aSum - bSum;
+    });
+
+    for (let i = 0; i < remainingPairs.length; i++) {
+      const [a, b] = remainingPairs[i];
+      if (
+        !usedTeams.has(a) &&
+        !usedTeams.has(b) &&
+        !playedPairs.has(`${a}-${b}`)
+      ) {
+        round.push({ teams: [a, b], complete: false });
         usedTeams.add(a);
         usedTeams.add(b);
+        playedPairs.add(`${a}-${b}`);
+        playedPairs.add(`${b}-${a}`);
+        matchesCount[a]++;
+        matchesCount[b]++;
       }
       if (round.length === 2) break; // 2 courts max
     }
 
-    if (round.length < 2) break; // Don't keep rounds with less than 2 matches
+    // If we cannot fill both courts, break to avoid partial round
+    if (round.length < 2) break;
+
+    // Remove these pairs from remainingPairs
+    round.forEach(({ teams }) => {
+      const idx = remainingPairs.findIndex(
+        ([x, y]) =>
+          (x === teams[0] && y === teams[1]) || (x === teams[1] && y === teams[0])
+      );
+      if (idx !== -1) remainingPairs.splice(idx, 1);
+    });
 
     rounds.push(round);
-
-    // Remove used pairs
-    for (const match of round) {
-      const index = remaining.findIndex(
-        (m) =>
-          (m.teams[0] === match.teams[0] && m.teams[1] === match.teams[1]) ||
-          (m.teams[0] === match.teams[1] && m.teams[1] === match.teams[0])
-      );
-      if (index !== -1) remaining.splice(index, 1);
-    }
   }
 
   return rounds;
@@ -52,26 +101,27 @@ export default function App() {
   const [teamCount, setTeamCount] = useState(() => {
     return parseInt(localStorage.getItem("teamCount")) || 6;
   });
+
   const [rounds, setRounds] = useState(() => {
     const stored = localStorage.getItem("rounds");
     return stored ? JSON.parse(stored) : [];
   });
 
-  // Generate and save rounds when teamCount changes and on initial load
+  // Generate and save rounds when teamCount changes or on initial load (if no rounds saved)
   useEffect(() => {
     localStorage.setItem("teamCount", teamCount);
     if (rounds.length === 0) {
-      const pairs = generatePairs(teamCount);
-      const grouped = groupRounds(pairs);
-      setRounds(grouped);
+      const generatedRounds = scheduleRounds(teamCount);
+      setRounds(generatedRounds);
     }
   }, [teamCount]);
 
-  // Save rounds to localStorage on every change
+  // Save rounds to localStorage on rounds change
   useEffect(() => {
     localStorage.setItem("rounds", JSON.stringify(rounds));
   }, [rounds]);
 
+  // Count matches played per team
   const matchesCount = {};
   for (let i = 1; i <= teamCount; i++) matchesCount[i] = 0;
   rounds.forEach((round) => {
@@ -83,12 +133,7 @@ export default function App() {
     });
   });
 
-  const regenerateSchedule = () => {
-    const pairs = generatePairs(teamCount);
-    const grouped = groupRounds(pairs);
-    setRounds(grouped);
-  };
-
+  // Toggle complete for match
   const toggleComplete = (roundIndex, courtIndex) => {
     const newRounds = rounds.map((round, rIdx) =>
       round.map((match, cIdx) => {
@@ -101,11 +146,18 @@ export default function App() {
     setRounds(newRounds);
   };
 
+  // Regenerate full schedule (clears progress)
+  const regenerateSchedule = () => {
+    const newRounds = scheduleRounds(teamCount);
+    setRounds(newRounds);
+  };
+
+  // Reset all progress but keep schedule
   const resetProgress = () => {
-    const clearedRounds = rounds.map((round) =>
+    const cleared = rounds.map((round) =>
       round.map((match) => ({ ...match, complete: false }))
     );
-    setRounds(clearedRounds);
+    setRounds(cleared);
   };
 
   return (
@@ -125,13 +177,13 @@ export default function App() {
             onChange={(e) => {
               const val = parseInt(e.target.value);
               setTeamCount(val);
-              setRounds([]); // Regenerate schedule
+              setRounds([]); // regenerate schedule
             }}
-            className="border border-gray-300 rounded-md px-3 py-2 text-center w-28 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="border border-gray-300 rounded-md px-3 py-2 w-24 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             {Array.from({ length: 12 }, (_, i) => i + 4).map((num) => (
               <option key={num} value={num}>
-                {num} Teams
+                {num}
               </option>
             ))}
           </select>
@@ -139,7 +191,7 @@ export default function App() {
 
         <div className="mb-8">
           <h2 className="text-xl font-semibold mb-3">Matches Played Per Team</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             {Object.entries(matchesCount).map(([team, count]) => (
               <div
                 key={team}
@@ -153,7 +205,10 @@ export default function App() {
 
         <div className="space-y-8">
           {rounds.map((round, roundIndex) => (
-            <div key={roundIndex} className="bg-white rounded-lg shadow-md p-6">
+            <div
+              key={roundIndex}
+              className="bg-white rounded-lg shadow-md p-6"
+            >
               <h2 className="text-xl font-semibold mb-4 text-indigo-600">
                 Round {roundIndex + 1}
               </h2>
@@ -162,9 +217,9 @@ export default function App() {
                 {round.map(({ teams, complete }, courtIndex) => (
                   <div
                     key={courtIndex}
-                    className="flex flex-col sm:flex-row items-center justify-between p-3 bg-indigo-50 rounded-md shadow-sm"
+                    className="flex items-center justify-between p-3 bg-indigo-50 rounded-md shadow-sm"
                   >
-                    <span className="font-medium text-gray-700 mb-2 sm:mb-0">
+                    <span className="font-medium text-gray-700">
                       Court {courtIndex + 1}: Team {teams[0]} vs Team {teams[1]}
                     </span>
                     <button
