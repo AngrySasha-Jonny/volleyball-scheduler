@@ -57,7 +57,7 @@ export default function App() {
     return stored ? JSON.parse(stored) : [];
   });
 
-  // Generate and save rounds when teamCount changes and on initial load (if no rounds saved)
+  // Generate and save rounds when teamCount changes and on initial load
   useEffect(() => {
     localStorage.setItem("teamCount", teamCount);
     if (rounds.length === 0) {
@@ -72,7 +72,6 @@ export default function App() {
     localStorage.setItem("rounds", JSON.stringify(rounds));
   }, [rounds]);
 
-  // Count matches played per team
   const matchesCount = {};
   for (let i = 1; i <= teamCount; i++) matchesCount[i] = 0;
   rounds.forEach((round) => {
@@ -84,14 +83,12 @@ export default function App() {
     });
   });
 
-  // Regenerate schedule from scratch (resets progress)
   const regenerateSchedule = () => {
     const pairs = generatePairs(teamCount);
     const grouped = groupRounds(pairs);
     setRounds(grouped);
   };
 
-  // Toggle complete state of a match
   const toggleComplete = (roundIndex, courtIndex) => {
     const newRounds = rounds.map((round, rIdx) =>
       round.map((match, cIdx) => {
@@ -104,7 +101,6 @@ export default function App() {
     setRounds(newRounds);
   };
 
-  // Reset all progress
   const resetProgress = () => {
     const clearedRounds = rounds.map((round) =>
       round.map((match) => ({ ...match, complete: false }))
@@ -123,26 +119,27 @@ export default function App() {
           <label htmlFor="teamCount" className="font-semibold text-lg">
             Number of Teams:
           </label>
-          <input
+          <select
             id="teamCount"
-            type="number"
-            min="4"
-            max="15"
             value={teamCount}
             onChange={(e) => {
               const val = parseInt(e.target.value);
-              if (val >= 4 && val <= 15) {
-                setTeamCount(val);
-                setRounds([]); // Clear rounds so new schedule regenerates
-              }
+              setTeamCount(val);
+              setRounds([]); // Regenerate schedule
             }}
-            className="border border-gray-300 rounded-md px-3 py-2 text-center w-20 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+            className="border border-gray-300 rounded-md px-3 py-2 text-center w-28 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 4).map((num) => (
+              <option key={num} value={num}>
+                {num} Teams
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="mb-8">
           <h2 className="text-xl font-semibold mb-3">Matches Played Per Team</h2>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Object.entries(matchesCount).map(([team, count]) => (
               <div
                 key={team}
@@ -156,10 +153,7 @@ export default function App() {
 
         <div className="space-y-8">
           {rounds.map((round, roundIndex) => (
-            <div
-              key={roundIndex}
-              className="bg-white rounded-lg shadow-md p-6"
-            >
+            <div key={roundIndex} className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold mb-4 text-indigo-600">
                 Round {roundIndex + 1}
               </h2>
@@ -168,9 +162,9 @@ export default function App() {
                 {round.map(({ teams, complete }, courtIndex) => (
                   <div
                     key={courtIndex}
-                    className="flex items-center justify-between p-3 bg-indigo-50 rounded-md shadow-sm"
+                    className="flex flex-col sm:flex-row items-center justify-between p-3 bg-indigo-50 rounded-md shadow-sm"
                   >
-                    <span className="font-medium text-gray-700">
+                    <span className="font-medium text-gray-700 mb-2 sm:mb-0">
                       Court {courtIndex + 1}: Team {teams[0]} vs Team {teams[1]}
                     </span>
                     <button
